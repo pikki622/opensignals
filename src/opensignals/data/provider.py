@@ -46,7 +46,7 @@ class Provider(ABC):
             'bloomberg_ticker': pd.Series([], dtype='str'),
             'date': pd.Series([], dtype='datetime64[ns]')
         })
-        if len(list(db_dir.rglob('*.parquet'))) > 0:
+        if list(db_dir.rglob('*.parquet')):
             ticker_data = pd.read_parquet(db_dir)
 
         num = ticker_data.bloomberg_ticker.unique().shape[0]
@@ -59,7 +59,7 @@ class Provider(ABC):
                            ticker_map: pd.DataFrame,
                            last_friday: Optional[dt.datetime] = None) -> pd.DataFrame:
         if last_friday is None:
-            last_friday = dt.datetime.today() - relativedelta(weekday=FR(-1))
+            last_friday = dt.datetime.now() - relativedelta(weekday=FR(-1))
         tickers_available_data = ticker_data.groupby('bloomberg_ticker').agg({'date': [max, min]})
         tickers_available_data.columns = ['date_max', 'date_min']
 
@@ -147,7 +147,7 @@ class Provider(ABC):
                  feature_prefix: Optional[str] = None) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, List[str]]:
         """generate data set"""
         if last_friday is None:
-            last_friday = dt.datetime.today() - relativedelta(weekday=FR(-1))
+            last_friday = dt.datetime.now() - relativedelta(weekday=FR(-1))
         if features_generators is None:
             features_generators = []
 
@@ -180,12 +180,15 @@ class Provider(ABC):
 
         dfs = {}
         with futures.ThreadPoolExecutor() as executor:
-            _futures = []
-            for ticker in tickers:
-                _futures.append(
-                    executor.submit(self.download_ticker, ticker=ticker, start=start_date, end=end_date)
+            _futures = [
+                executor.submit(
+                    self.download_ticker,
+                    ticker=ticker,
+                    start=start_date,
+                    end=end_date,
                 )
-
+                for ticker in tickers
+            ]
             for future in futures.as_completed(_futures):
                 pbar.update(1)
                 ticker, data = future.result()
@@ -234,7 +237,7 @@ class Provider(ABC):
 
             concat_dfs.append(temp_df)
 
-        if len(concat_dfs) == 0:
+        if not concat_dfs:
             logger.info('Dataset up to date')
             return
 
